@@ -14,27 +14,25 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
 
-/* ================= DATABASE ================= */
+/* ================= ENV DEBUG (SAFE) ================= */
 
 console.log("DB_HOST:", process.env.DB_HOST);
 console.log("DB_PORT:", process.env.DB_PORT);
 
+/* ================= DATABASE ================= */
+
 const db = new Pool({
-    host: process.env.DB_HOST,
-    user: process.env.DB_USER,
-    password: process.env.DB_PASS,
-    database: process.env.DB_NAME,
-    port: process.env.DB_PORT,
+    connectionString: process.env.DATABASE_URL,
     ssl: {
         rejectUnauthorized: false
     }
 });
 
-/* ================= TEST DB CONNECTION ================= */
+/* ================= DB CONNECTION TEST ================= */
 
-db.query("SELECT NOW()")
-    .then(() => console.log("PostgreSQL Connected"))
-    .catch(err => console.log("DB Error:", err));
+db.connect()
+    .then(() => console.log("PostgreSQL Connected 🚀"))
+    .catch(err => console.log("DB Error:", err.message));
 
 /* ================= EMAIL ================= */
 
@@ -57,9 +55,15 @@ app.get("/", (req, res) => {
 app.get("/testdb", async (req, res) => {
     try {
         const result = await db.query("SELECT NOW()");
-        res.json(result.rows);
+        res.json({
+            success: true,
+            time: result.rows[0]
+        });
     } catch (err) {
-        res.status(500).json(err);
+        res.status(500).json({
+            success: false,
+            error: err.message
+        });
     }
 });
 
@@ -67,8 +71,14 @@ app.get("/testdb", async (req, res) => {
 
 app.post("/submit", async (req, res) => {
     try {
-
         const { name, email, budget, project } = req.body;
+
+        if (!name || !email || !project) {
+            return res.status(400).json({
+                success: false,
+                message: "Missing required fields"
+            });
+        }
 
         await db.query(
             `
@@ -78,7 +88,8 @@ app.post("/submit", async (req, res) => {
             [name, email, budget, project]
         );
 
-        const adminMail = {
+        /* ---------- ADMIN EMAIL ---------- */
+        transporter.sendMail({
             from: `Noctisvora <${process.env.EMAIL_USER}>`,
             to: process.env.EMAIL_USER,
             subject: "🚀 New Project Request",
@@ -88,13 +99,10 @@ Email: ${email}
 Budget: ${budget}
 Project: ${project}
 `
-        };
-
-        transporter.sendMail(adminMail, (error) => {
-            if (error) console.log("Admin Mail Error:", error);
         });
 
-        const userMail = {
+        /* ---------- USER EMAIL ---------- */
+        transporter.sendMail({
             from: `Noctisvora <${process.env.EMAIL_USER}>`,
             to: email,
             subject: "We received your request 🚀",
@@ -107,17 +115,19 @@ Our team will contact you soon.
 
 — Noctisvora
 `
-        };
-
-        transporter.sendMail(userMail, (error) => {
-            if (error) console.log("User Mail Error:", error);
         });
 
-        res.send("Project Submitted 🚀");
+        res.json({
+            success: true,
+            message: "Project Submitted 🚀"
+        });
 
     } catch (err) {
         console.log(err);
-        res.status(500).json(err);
+        res.status(500).json({
+            success: false,
+            error: err.message
+        });
     }
 });
 
@@ -125,7 +135,6 @@ Our team will contact you soon.
 
 app.get("/requests", async (req, res) => {
     try {
-
         const result = await db.query(
             "SELECT * FROM requests ORDER BY id DESC"
         );
@@ -133,7 +142,10 @@ app.get("/requests", async (req, res) => {
         res.json(result.rows);
 
     } catch (err) {
-        res.status(500).json(err);
+        res.status(500).json({
+            success: false,
+            error: err.message
+        });
     }
 });
 
@@ -141,7 +153,6 @@ app.get("/requests", async (req, res) => {
 
 app.put("/requests/:id", async (req, res) => {
     try {
-
         const { status } = req.body;
 
         await db.query(
@@ -149,10 +160,13 @@ app.put("/requests/:id", async (req, res) => {
             [status, req.params.id]
         );
 
-        res.send("Updated");
+        res.json({ success: true, message: "Updated" });
 
     } catch (err) {
-        res.status(500).json(err);
+        res.status(500).json({
+            success: false,
+            error: err.message
+        });
     }
 });
 
@@ -160,21 +174,23 @@ app.put("/requests/:id", async (req, res) => {
 
 app.delete("/requests/:id", async (req, res) => {
     try {
-
         await db.query(
             "DELETE FROM requests WHERE id = $1",
             [req.params.id]
         );
 
-        res.send("Deleted");
+        res.json({ success: true, message: "Deleted" });
 
     } catch (err) {
-        res.status(500).json(err);
+        res.status(500).json({
+            success: false,
+            error: err.message
+        });
     }
 });
 
 /* ================= START SERVER ================= */
 
 app.listen(PORT, () => {
-    console.log(`Server running on ${PORT}`);
+    console.log(`Server running on ${PORT} 🚀`);
 });
