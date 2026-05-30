@@ -11,30 +11,25 @@ app.use(cors());
 app.use(express.json());
 
 /* ================= PORT ================= */
-
 const PORT = process.env.PORT || 3000;
 
-/* ================= ENV DEBUG (SAFE) ================= */
+/* ================= BASIC DEBUG ================= */
+console.log("DATABASE_URL EXISTS:", !!process.env.DATABASE_URL);
 
-console.log("DB_HOST:", process.env.DB_HOST);
-console.log("DB_PORT:", process.env.DB_PORT);
-
-/* ================= DATABASE ================= */
-
+/* ================= DATABASE (CLEAN + FIXED) ================= */
 const db = new Pool({
     connectionString: process.env.DATABASE_URL,
     ssl: {
         rejectUnauthorized: false
     }
-});console.log("DATABASE_URL EXISTS:", !!process.env.DATABASE_URL);
-/* ================= DB CONNECTION TEST ================= */
+});
 
-db.connect()
+/* SAFE CONNECTION TEST */
+db.query("SELECT NOW()")
     .then(() => console.log("PostgreSQL Connected 🚀"))
-    .catch(err => console.log("DB Error:", err.message));
+    .catch((err) => console.log("DB Error:", err.message));
 
 /* ================= EMAIL ================= */
-
 const transporter = nodemailer.createTransport({
     service: "gmail",
     auth: {
@@ -44,13 +39,11 @@ const transporter = nodemailer.createTransport({
 });
 
 /* ================= HOME ================= */
-
 app.get("/", (req, res) => {
     res.send("Noctisvora Backend is Live 🚀");
 });
 
 /* ================= TEST DB ================= */
-
 app.get("/testdb", async (req, res) => {
     try {
         const result = await db.query("SELECT NOW()");
@@ -67,7 +60,6 @@ app.get("/testdb", async (req, res) => {
 });
 
 /* ================= SUBMIT API ================= */
-
 app.post("/submit", async (req, res) => {
     try {
         const { name, email, budget, project } = req.body;
@@ -80,40 +72,22 @@ app.post("/submit", async (req, res) => {
         }
 
         await db.query(
-            `
-            INSERT INTO requests (name, email, budget, project)
-            VALUES ($1, $2, $3, $4)
-            `,
+            "INSERT INTO requests (name, email, budget, project) VALUES ($1, $2, $3, $4)",
             [name, email, budget, project]
         );
 
-        /* ---------- ADMIN EMAIL ---------- */
         transporter.sendMail({
             from: `Noctisvora <${process.env.EMAIL_USER}>`,
             to: process.env.EMAIL_USER,
             subject: "🚀 New Project Request",
-            text: `
-Name: ${name}
-Email: ${email}
-Budget: ${budget}
-Project: ${project}
-`
+            text: `Name: ${name}\nEmail: ${email}\nBudget: ${budget}\nProject: ${project}`
         });
 
-        /* ---------- USER EMAIL ---------- */
         transporter.sendMail({
             from: `Noctisvora <${process.env.EMAIL_USER}>`,
             to: email,
             subject: "We received your request 🚀",
-            text: `
-Hello ${name},
-
-We have received your project request.
-
-Our team will contact you soon.
-
-— Noctisvora
-`
+            text: `Hello ${name},\n\nWe received your request. We will contact you soon.\n\n— Noctisvora`
         });
 
         res.json({
@@ -122,7 +96,7 @@ Our team will contact you soon.
         });
 
     } catch (err) {
-        console.log(err);
+        console.log("Submit Error:", err.message);
         res.status(500).json({
             success: false,
             error: err.message
@@ -131,7 +105,6 @@ Our team will contact you soon.
 });
 
 /* ================= GET REQUESTS ================= */
-
 app.get("/requests", async (req, res) => {
     try {
         const result = await db.query(
@@ -149,7 +122,6 @@ app.get("/requests", async (req, res) => {
 });
 
 /* ================= UPDATE STATUS ================= */
-
 app.put("/requests/:id", async (req, res) => {
     try {
         const { status } = req.body;
@@ -170,7 +142,6 @@ app.put("/requests/:id", async (req, res) => {
 });
 
 /* ================= DELETE REQUEST ================= */
-
 app.delete("/requests/:id", async (req, res) => {
     try {
         await db.query(
@@ -189,7 +160,6 @@ app.delete("/requests/:id", async (req, res) => {
 });
 
 /* ================= START SERVER ================= */
-
 app.listen(PORT, () => {
     console.log(`Server running on ${PORT} 🚀`);
 });
