@@ -26,8 +26,7 @@ const db = new Pool({
     ssl: {
         rejectUnauthorized: false
     }
-});
-
+});console.log("DATABASE_URL EXISTS:", !!process.env.DATABASE_URL);
 /* ================= DB CONNECTION TEST ================= */
 
 db.connect()
