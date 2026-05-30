@@ -1,7 +1,8 @@
-<<<<<<< HEAD
+require("dotenv").config();
+
 const express = require("express");
 const cors = require("cors");
-const mysql = require("mysql2");
+const { Pool } = require("pg");
 const nodemailer = require("nodemailer");
 
 const app = express();
@@ -10,77 +11,91 @@ app.use(cors());
 app.use(express.json());
 
 /* ================= PORT ================= */
+
 const PORT = process.env.PORT || 3000;
 
 /* ================= DATABASE ================= */
 
-const db = mysql.createConnection({
-    host: process.env.DB_HOST
-user: process.env.DB_USER
-password: process.env.DB_PASS
-database: process.env.DB_NAMEra"
+console.log("DB_HOST:", process.env.DB_HOST);
+console.log("DB_PORT:", process.env.DB_PORT);
+
+const db = new Pool({
+    host: process.env.DB_HOST,
+    user: process.env.DB_USER,
+    password: process.env.DB_PASS,
+    database: process.env.DB_NAME,
+    port: process.env.DB_PORT,
+    ssl: {
+        rejectUnauthorized: false
+    }
 });
+
+/* ================= TEST DB CONNECTION ================= */
+
+db.query("SELECT NOW()")
+    .then(() => console.log("PostgreSQL Connected"))
+    .catch(err => console.log("DB Error:", err));
 
 /* ================= EMAIL ================= */
 
 const transporter = nodemailer.createTransport({
     service: "gmail",
     auth: {
-        user: "noctisvora@gmail.com",
-        pass: "YOUR_APP_PASSWORD"
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS
     }
 });
 
-/* ================= CONNECT DB ================= */
+/* ================= HOME ================= */
 
-db.connect((err) => {
-    if (err) {
-        console.log("DB Error:", err);
-    } else {
-        console.log("MySQL Connected");
+app.get("/", (req, res) => {
+    res.send("Noctisvora Backend is Live 🚀");
+});
+
+/* ================= TEST DB ================= */
+
+app.get("/testdb", async (req, res) => {
+    try {
+        const result = await db.query("SELECT NOW()");
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json(err);
     }
 });
 
 /* ================= SUBMIT API ================= */
 
-app.post("/submit", (req, res) => {
+app.post("/submit", async (req, res) => {
+    try {
 
-    const { name, email, budget, project } = req.body;
+        const { name, email, budget, project } = req.body;
 
-    const sql = `
-        INSERT INTO requests (name,email,budget,project)
-        VALUES (?,?,?,?)
-    `;
-
-    db.query(sql, [name, email, budget, project], (err) => {
-
-        if (err) {
-            console.log(err);
-            return res.status(500).send("Error saving request");
-        }
-
-        /* ===== ADMIN EMAIL ===== */
+        await db.query(
+            `
+            INSERT INTO requests (name, email, budget, project)
+            VALUES ($1, $2, $3, $4)
+            `,
+            [name, email, budget, project]
+        );
 
         const adminMail = {
-            from: "Noctisvora <noctisvora@gmail.com>",
-            to: "noctisvora@gmail.com",
+            from: `Noctisvora <${process.env.EMAIL_USER}>`,
+            to: process.env.EMAIL_USER,
             subject: "🚀 New Project Request",
             text: `
 Name: ${name}
 Email: ${email}
 Budget: ${budget}
 Project: ${project}
-            `
+`
         };
 
         transporter.sendMail(adminMail, (error) => {
             if (error) console.log("Admin Mail Error:", error);
         });
 
-        /* ===== AUTO REPLY ===== */
-
         const userMail = {
-            from: "Noctisvora <no-reply@gmail.com>",
+            from: `Noctisvora <${process.env.EMAIL_USER}>`,
             to: email,
             subject: "We received your request 🚀",
             text: `
@@ -91,7 +106,7 @@ We have received your project request.
 Our team will contact you soon.
 
 — Noctisvora
-            `
+`
         };
 
         transporter.sendMail(userMail, (error) => {
@@ -99,208 +114,67 @@ Our team will contact you soon.
         });
 
         res.send("Project Submitted 🚀");
-    });
+
+    } catch (err) {
+        console.log(err);
+        res.status(500).json(err);
+    }
 });
 
-/* ================= GET REQUESTS (ADMIN PANEL) ================= */
+/* ================= GET REQUESTS ================= */
 
-app.get("/requests", (req, res) => {
+app.get("/requests", async (req, res) => {
+    try {
 
-    db.query("SELECT * FROM requests ORDER BY id DESC", (err, result) => {
+        const result = await db.query(
+            "SELECT * FROM requests ORDER BY id DESC"
+        );
 
-        if (err) {
-            return res.status(500).json(err);
-        }
+        res.json(result.rows);
 
-        res.json(result);
-    });
+    } catch (err) {
+        res.status(500).json(err);
+    }
 });
 
 /* ================= UPDATE STATUS ================= */
 
-app.put("/requests/:id", (req, res) => {
+app.put("/requests/:id", async (req, res) => {
+    try {
 
-    const { status } = req.body;
+        const { status } = req.body;
 
-    db.query(
-        "UPDATE requests SET status=? WHERE id=?",
-        [status, req.params.id],
-        (err) => {
-            if (err) return res.status(500).send(err);
-            res.send("Updated");
-        }
-    );
+        await db.query(
+            "UPDATE requests SET status = $1 WHERE id = $2",
+            [status, req.params.id]
+        );
+
+        res.send("Updated");
+
+    } catch (err) {
+        res.status(500).json(err);
+    }
 });
 
 /* ================= DELETE REQUEST ================= */
 
-app.delete("/requests/:id", (req, res) => {
+app.delete("/requests/:id", async (req, res) => {
+    try {
 
-    db.query(
-        "DELETE FROM requests WHERE id=?",
-        [req.params.id],
-        (err) => {
-            if (err) return res.status(500).send(err);
-            res.send("Deleted");
-        }
-    );
+        await db.query(
+            "DELETE FROM requests WHERE id = $1",
+            [req.params.id]
+        );
+
+        res.send("Deleted");
+
+    } catch (err) {
+        res.status(500).json(err);
+    }
 });
 
 /* ================= START SERVER ================= */
 
 app.listen(PORT, () => {
-    console.log("Server running on", PORT);
-=======
-const express = require("express");
-const cors = require("cors");
-const mysql = require("mysql2");
-const nodemailer = require("nodemailer");
-
-const app = express();
-
-app.use(cors());
-app.use(express.json());
-
-/* ================= PORT ================= */
-const PORT = process.env.PORT || 3000;
-
-/* ================= DATABASE ================= */
-
-const db = mysql.createConnection({
-    host: "localhost",
-    user: "root",
-    password: "root123",
-    database: "noctisvora"
-});
-
-/* ================= EMAIL ================= */
-
-const transporter = nodemailer.createTransport({
-    service: "gmail",
-    auth: {
-        user: "noctisvora@gmail.com",
-        pass: "YOUR_APP_PASSWORD"
-    }
-});
-
-/* ================= CONNECT DB ================= */
-
-db.connect((err) => {
-    if (err) {
-        console.log("DB Error:", err);
-    } else {
-        console.log("MySQL Connected");
-    }
-});
-
-/* ================= SUBMIT API ================= */
-
-app.post("/submit", (req, res) => {
-
-    const { name, email, budget, project } = req.body;
-
-    const sql = `
-        INSERT INTO requests (name,email,budget,project)
-        VALUES (?,?,?,?)
-    `;
-
-    db.query(sql, [name, email, budget, project], (err) => {
-
-        if (err) {
-            console.log(err);
-            return res.status(500).send("Error saving request");
-        }
-
-        /* ===== ADMIN EMAIL ===== */
-
-        const adminMail = {
-            from: "Noctisvora <noctisvora@gmail.com>",
-            to: "noctisvora@gmail.com",
-            subject: "🚀 New Project Request",
-            text: `
-Name: ${name}
-Email: ${email}
-Budget: ${budget}
-Project: ${project}
-            `
-        };
-
-        transporter.sendMail(adminMail, (error) => {
-            if (error) console.log("Admin Mail Error:", error);
-        });
-
-        /* ===== AUTO REPLY ===== */
-
-        const userMail = {
-            from: "Noctisvora <no-reply@gmail.com>",
-            to: email,
-            subject: "We received your request 🚀",
-            text: `
-Hello ${name},
-
-We have received your project request.
-
-Our team will contact you soon.
-
-— Noctisvora
-            `
-        };
-
-        transporter.sendMail(userMail, (error) => {
-            if (error) console.log("User Mail Error:", error);
-        });
-
-        res.send("Project Submitted 🚀");
-    });
-});
-
-/* ================= GET REQUESTS (ADMIN PANEL) ================= */
-
-app.get("/requests", (req, res) => {
-
-    db.query("SELECT * FROM requests ORDER BY id DESC", (err, result) => {
-
-        if (err) {
-            return res.status(500).json(err);
-        }
-
-        res.json(result);
-    });
-});
-
-/* ================= UPDATE STATUS ================= */
-
-app.put("/requests/:id", (req, res) => {
-
-    const { status } = req.body;
-
-    db.query(
-        "UPDATE requests SET status=? WHERE id=?",
-        [status, req.params.id],
-        (err) => {
-            if (err) return res.status(500).send(err);
-            res.send("Updated");
-        }
-    );
-});
-
-/* ================= DELETE REQUEST ================= */
-
-app.delete("/requests/:id", (req, res) => {
-
-    db.query(
-        "DELETE FROM requests WHERE id=?",
-        [req.params.id],
-        (err) => {
-            if (err) return res.status(500).send(err);
-            res.send("Deleted");
-        }
-    );
-});
-
-/* ================= START SERVER ================= */
-
-app.listen(PORT, () => {
-    console.log("Server running on", PORT);
->>>>>>> d74cf1e17d8d5056c43df1925545010a6dbd0c35
+    console.log(`Server running on ${PORT}`);
 });
